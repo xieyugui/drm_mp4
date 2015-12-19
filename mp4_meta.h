@@ -556,7 +556,7 @@ public:
       ftyp_size(0), moov_size(0), start_pos(0), timescale(0), trak_num(0), passed(0), meta_complete(false), tdes_key(NULL),
 	  version(0),videoid_size(0),videoid(NULL), userid_size(0), userid(NULL),range_size(0),range_start(0),range_end(0),
 	  original_file_size(0),section_size(0),section_count(0),section_length_arr(NULL),reserved_size(0), reserved(NULL),
-	  tag_pos(0),drm_head_length(0),complete_parse_drm_header(false),duration_pos(0),drm_length(0)
+	  tag_pos(0),drm_head_length(0),complete_parse_drm_header(false),duration_pos(0),drm_length(0),is_des_body(false)
   {
     memset(trak_vec, 0, sizeof(trak_vec));
 
@@ -781,6 +781,7 @@ public:
   bool complete_parse_drm_header;
   int64_t duration_pos;//MP4 从头开始计数，为了方便计算该丢弃多少数据
   int64_t drm_length;
+  bool is_des_body;//是否已经加密过
 };
 
 #endif
