@@ -67,7 +67,7 @@ public:
     res_reader = TSIOBufferReaderAlloc(res_buffer);
     dup_reader = TSIOBufferReaderAlloc(res_buffer);
 
-    mm.start = offset * 1000; //起始时间点，转为毫秒
+    mm.start = offset; //起始长度
     mm.cl = cl; //文件总长度
     mm.tdes_key = des_key;
   }

@@ -31,17 +31,20 @@
 
 #include "des.h"
 
-#define DEBUG_TAG "ts_mp4"
+#define DEBUG_TAG "drm_mp4"
+#define PLUGIN_NAME "drm_mp4"
 
 #define MP4_MAX_TRAK_NUM 6
 #define MP4_MAX_BUFFER_SIZE (10 * 1024 * 1024) //10M
 #define MP4_MIN_BUFFER_SIZE 1024 //1K
 
-#define MP4_NEED_DES_LENGTH 8174
+#define MP4_NEED_DES_LENGTH 8176
 #define MP4_DES_ADD_LENGTH 8
 #define MP4_DES_LENGTH (MP4_NEED_DES_LENGTH + MP4_DES_ADD_LENGTH)
+#define MP4_DES_MAX_COUNT 5
 
 typedef enum { VIDEO_VERSION_1 = 1, VIDEO_VERSION_3 = 3, VIDEO_VERSION_4  = 4 } video_version;
+typedef enum { FLV_VIDEO, VIDEO_PCF , VIDEO_PCM  } VideoType;
 
 #define mp4_set_atom_name(p, n1, n2, n3, n4) \
   ((u_char *)(p))[4] = n1;                   \
@@ -53,7 +56,7 @@ typedef enum { VIDEO_VERSION_1 = 1, VIDEO_VERSION_3 = 3, VIDEO_VERSION_4  = 4 } 
   (((uint32_t)((u_char *)(p))[0] << 24) + (((u_char *)(p))[1] << 16) + (((u_char *)(p))[2] << 8) + (((u_char *)(p))[3]))
 
 /* swap 32 bits integers */
-# define swap_uint32(x) ((uint32)((((x) & 0x000000FFU) << 24) | \
+# define swap_uint32(x) ((uint32_t)((((x) & 0x000000FFU) << 24) | \
     (((x) & 0x0000FF00U) << 8)  | \
     (((x) & 0x00FF0000U) >> 8)  | \
     (((x) & 0xFF000000U) >> 24)))
@@ -81,7 +84,7 @@ typedef enum { VIDEO_VERSION_1 = 1, VIDEO_VERSION_3 = 3, VIDEO_VERSION_4  = 4 } 
 
 
 typedef struct _drm_header {
-	byte signature[3]; //标志信息
+	uint8_t signature[3]; //标志信息
 	uint32_t version; //版本
 	uint32_t videoid_size; //videoid 长度
 } drm_header;
@@ -552,8 +555,8 @@ public:
     : start(0), cl(0), content_length(0), meta_atom_size(0), meta_avail(0), wait_next(0), need_size(0), rs(0), rate(0),
       ftyp_size(0), moov_size(0), start_pos(0), timescale(0), trak_num(0), passed(0), meta_complete(false), tdes_key(NULL),
 	  version(0),videoid_size(0),videoid(NULL), userid_size(0), userid(NULL),range_size(0),range_start(0),range_end(0),
-	  original_file_size(0),section_size(0),section_count(0),section_length_arr(NULL),reserved_size(0), reserved(NULL),drm_head_length(0),
-	  tag_pos(0),drm_head_length(0)
+	  original_file_size(0),section_size(0),section_count(0),section_length_arr(NULL),reserved_size(0), reserved(NULL),
+	  tag_pos(0),drm_head_length(0),complete_parse_drm_header(false),duration_pos(0),drm_length(0)
   {
     memset(trak_vec, 0, sizeof(trak_vec));
 
@@ -637,6 +640,8 @@ public:
   int process_drm_header_range();
   int process_drm_header_sections();
   int process_drm_header_reserved();
+  int process_decrypt_mp4_body();//根据头信息进行解密
+  int process_des_mp4_body();
 
   int parse_meta(bool body_complete);
 
@@ -688,6 +693,10 @@ public:
   int mp4_update_mdia_atom(Mp4Trak *trak);
   int mp4_update_trak_atom(Mp4Trak *trak);
 
+  int mp4_get_start_sample(Mp4Trak *trak);
+  off_t mp4_get_start_chunk_offset_co64(Mp4Trak *trak);
+  off_t mp4_get_start_chunk_offset_stco(Mp4Trak *trak);
+
   int64_t mp4_update_mdat_atom(int64_t start_offset);
   int mp4_adjust_co64_atom(Mp4Trak *trak, off_t adjustment);
   int mp4_adjust_stco_atom(Mp4Trak *trak, int32_t adjustment);
@@ -696,6 +705,8 @@ public:
   void mp4_update_mvhd_duration();
   void mp4_update_tkhd_duration(Mp4Trak *trak);
   void mp4_update_mdhd_duration(Mp4Trak *trak);
+
+  int change_drm_header(off_t start_offset, off_t adjustment);
 
 public:
   int64_t start;          // requested start time, measured in milliseconds.
@@ -767,7 +778,9 @@ public:
   u_char *reserved;
   int64_t drm_head_length;  //drm head 的长度
   int64_t tag_pos; //已经消费了多少字节
-  int64_t drm_head_length;  //drm head 的长度
+  bool complete_parse_drm_header;
+  int64_t duration_pos;//MP4 从头开始计数，为了方便计算该丢弃多少数据
+  int64_t drm_length;
 };
 
 #endif

@@ -19,7 +19,6 @@
 #include "mp4_common.h"
 
 
-static char *ts_arg(const char *param, size_t param_len, const char *key, size_t key_len, size_t *val_len);
 static int mp4_handler(TSCont contp, TSEvent event, void *edata);
 static void mp4_cache_lookup_complete(Mp4Context *mc, TSHttpTxn txnp);
 static void mp4_read_response(Mp4Context *mc, TSHttpTxn txnp);
@@ -62,7 +61,9 @@ TSRemapNewInstance(int argc, char *argv[] /* argv ATS_UNUSED */, void **ih, char
 void
 TSRemapDeleteInstance(void * /* ih ATS_UNUSED */)
 {
-	TSfree((u_char *) des_key);
+	if(des_key) {
+		TSfree((u_char *) des_key);
+	}
 	TSDebug(PLUGIN_NAME,"free des key success");
 }
 
@@ -212,6 +213,7 @@ mp4_cache_lookup_complete(Mp4Context *mc, TSHttpTxn txnp)
     goto release;
 
   mc->cl = n;
+  TSDebug(PLUGIN_NAME,"mp4_cache_lookup_complete cl %ld",n);
   mp4_add_transform(mc, txnp);
 
 release:
@@ -246,7 +248,7 @@ mp4_read_response(Mp4Context *mc, TSHttpTxn txnp)
 
   if (n <= 0)
     goto release;
-
+  TSDebug(PLUGIN_NAME,"mp4_read_response cl %ld",n);
   mc->cl = n;
   mp4_add_transform(mc, txnp);
 
@@ -341,6 +343,7 @@ mp4_transform_handler(TSCont contp, Mp4Context *mc)
   write_down = false;
 
   if (!mtc->parse_over) {
+	TSDebug(PLUGIN_NAME, "start mp4_parse_meta");
     ret = mp4_parse_meta(mtc, toread <= 0);
     TSDebug(PLUGIN_NAME, "parse_over %d, ret= %d",mtc->parse_over, ret);
     if (ret == 0)
@@ -445,8 +448,9 @@ mp4_parse_meta(Mp4TransformContext *mtc, bool body_complete) //开始解释MP4
     blk = TSIOBufferBlockNext(blk);
   }
 
+  TSDebug(PLUGIN_NAME, "mp4_parse_meta Consume avail = %ld",avail);
   TSIOBufferReaderConsume(mtc->dup_reader, avail);
-  TSDebug(PLUGIN_NAME, "drm_mp4 mp4_parse_meta");
+
   ret = mm->parse_meta(body_complete);//body_complete 是否传输完成
   TSDebug(PLUGIN_NAME, "mp4_parse_meta ret = %d",ret);
   if (ret > 0) { // meta success
@@ -463,39 +467,3 @@ mp4_parse_meta(Mp4TransformContext *mtc, bool body_complete) //开始解释MP4
   return ret;
 }
 
-static char *
-ts_arg(const char *param, size_t param_len, const char *key, size_t key_len, size_t *val_len)
-{
-  const char *p, *last;
-  const char *val;
-
-  *val_len = 0;
-
-  if (!param || !param_len)
-    return NULL;
-
-  p = param;
-  last = p + param_len;
-
-  for (; p < last; p++) {
-    p = (char *)memmem(p, last - p, key, key_len);
-
-    if (p == NULL)
-      return NULL;
-
-    if ((p == param || *(p - 1) == '&') && *(p + key_len) == '=') {
-      val = p + key_len + 1;
-
-      p = (char *)memchr(p, '&', last - p);
-
-      if (p == NULL)
-        p = param + param_len;
-
-      *val_len = p - val;
-
-      return (char *)val;
-    }
-  }
-
-  return NULL;
-}
