@@ -320,6 +320,7 @@ static int mp4_transform_handler(TSCont contp, Mp4Context *mc) {
 
 	if (!TSVIOBufferGet(input_vio)) {
 		if (mtc->output.buffer) {
+			TSDebug(PLUGIN_NAME, "parse_over dooxxx total= %ld", mtc->total);
 			TSVIONBytesSet(mtc->output.vio, mtc->total);
 			TSVIOReenable(mtc->output.vio);
 		}
@@ -328,12 +329,14 @@ static int mp4_transform_handler(TSCont contp, Mp4Context *mc) {
 
 	avail = TSIOBufferReaderAvail(input_reader);
 	upstream_done = TSVIONDoneGet(input_vio);
+	TSDebug(PLUGIN_NAME, "start upstream_done=%ld",upstream_done);
 
 	TSIOBufferCopy(mtc->res_buffer, input_reader, avail, 0);
 	TSIOBufferReaderConsume(input_reader, avail);
 	TSVIONDoneSet(input_vio, upstream_done + avail);
 
 	toread = TSVIONTodoGet(input_vio);
+	TSDebug(PLUGIN_NAME, "start toread=%ld",toread);
 	write_down = false;
 
 	if (!mtc->parse_over) {
@@ -348,13 +351,11 @@ static int mp4_transform_handler(TSCont contp, Mp4Context *mc) {
 		mtc->output.reader = TSIOBufferReaderAlloc(mtc->output.buffer);
 
 		if (ret < 0) { //解析成功，还是失败
-			mtc->output.vio = TSVConnWrite(output_conn, contp,
-					mtc->output.reader, mc->cl);
+			mtc->output.vio = TSVConnWrite(output_conn, contp,mtc->output.reader, mc->cl);
 			mtc->raw_transform = true;
 
 		} else {
-			mtc->output.vio = TSVConnWrite(output_conn, contp,
-					mtc->output.reader, mtc->content_length);
+			mtc->output.vio = TSVConnWrite(output_conn, contp,mtc->output.reader, mtc->content_length);
 		}
 	}
 
@@ -370,15 +371,14 @@ static int mp4_transform_handler(TSCont contp, Mp4Context *mc) {
 
 	} else {
 		// copy the new meta data
+		TSDebug(PLUGIN_NAME, "parse_over total=%ld, meta_length= %ld", mtc->total, mtc->meta_length);
 		if (mtc->total < mtc->meta_length) {
-			TSIOBufferCopy(mtc->output.buffer, mtc->mm.out_handle.reader,
-					mtc->meta_length, 0);
-			TSIOBufferReaderConsume(mtc->mm.out_handle.reader,
-					mtc->meta_length);
+			TSIOBufferCopy(mtc->output.buffer, mtc->mm.out_handle.reader,mtc->meta_length, 0);
+			TSIOBufferReaderConsume(mtc->mm.out_handle.reader,mtc->meta_length);
 			mtc->total += mtc->meta_length;
 			write_down = true;
 		}
-
+		TSDebug(PLUGIN_NAME, "parse_over a  pos=%ld, tail= %ld", mtc->pos, mtc->tail);
 		// ignore useless part
 		if (mtc->pos < mtc->tail) {
 			avail = TSIOBufferReaderAvail(mtc->res_reader);
@@ -392,11 +392,10 @@ static int mp4_transform_handler(TSCont contp, Mp4Context *mc) {
 				mtc->pos += need;
 			}
 		}
-
+		TSDebug(PLUGIN_NAME, "parse_over b pos=%ld, tail= %ld", mtc->pos, mtc->tail);
 		// copy the video & audio data
 		if (mtc->pos >= mtc->tail) {
 			avail = TSIOBufferReaderAvail(mtc->res_reader);
-//      des_avail = TSIOBufferReaderAvail(.des_reader);
 			if (avail > 0) {
 				//这边开始处理des 加密数据
 				mm = &mtc->mm;
@@ -405,21 +404,21 @@ static int mp4_transform_handler(TSCont contp, Mp4Context *mc) {
 					TSIOBufferCopy(mm->des_buffer, mtc->res_reader, avail, 0);
 					des_ret = mm->process_des_mp4_body();
 				} else {
-					TSIOBufferCopy(mtc->output.buffer, mtc->res_reader, avail,
-							0);
+					TSIOBufferCopy(mtc->output.buffer, mtc->res_reader, avail, 0);
 					write_down = true;
 				}
 				TSIOBufferReaderConsume(mtc->res_reader, avail);
 				mtc->pos += avail;
 				mtc->total += avail;
+				TSDebug(PLUGIN_NAME, "parse_over c pos=%ld, total= %ld", mtc->pos, mtc->total);
 				if (des_ret > 0) {
 					des_avail = TSIOBufferReaderAvail(mm->out_handle.reader);
 					if (des_avail > 0) {
-						TSIOBufferCopy(mtc->output.buffer,
-								mm->out_handle.reader, des_avail, 0);
-						TSIOBufferReaderConsume(mm->out_handle.reader,
-								des_avail);
+						TSIOBufferCopy(mtc->output.buffer,mm->out_handle.reader, des_avail, 0);
+						TSIOBufferReaderConsume(mm->out_handle.reader,des_avail);
 						write_down = true;
+						if(des_avail- avail > 0)
+							mtc->total += des_avail- avail;
 					}
 				}
 
@@ -438,6 +437,7 @@ static int mp4_transform_handler(TSCont contp, Mp4Context *mc) {
 
 	} else {
 		TSVIONBytesSet(mtc->output.vio, mtc->total);
+		TSDebug(PLUGIN_NAME, "parse_over d total= %ld", mtc->total);
 		TSContCall(TSVIOContGet(input_vio), TS_EVENT_VCONN_WRITE_COMPLETE,
 				input_vio);
 	}
@@ -478,6 +478,7 @@ static int mp4_parse_meta(Mp4TransformContext *mtc, bool body_complete) //开始
 		mtc->meta_length = TSIOBufferReaderAvail(mm->out_handle.reader);
 	}
 
+	TSDebug(PLUGIN_NAME, "mp4_parse_meta  des_reader  yyyyyyyyyyyyyyyyyy= %ld", TSIOBufferReaderAvail(mm->des_reader));
 	if (ret != 0) { //如果最后有结果了，不管成功还是失败 都销毁dup_reader
 		TSIOBufferReaderFree(mtc->dup_reader);
 		mtc->dup_reader = NULL;

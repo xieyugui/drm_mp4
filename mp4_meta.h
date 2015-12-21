@@ -552,7 +552,7 @@ class Mp4Meta
 {
 public:
   Mp4Meta()
-    : start(0), cl(0), content_length(0), meta_atom_size(0), meta_avail(0), wait_next(0), need_size(0), rs(0), rate(0),
+    : start(0), cl(0), content_length(0), meta_atom_size(0), meta_avail(0), wait_next(0), need_size(0), rs(0),is_rs_find(false),rate(0),
       ftyp_size(0), moov_size(0), start_pos(0), timescale(0), trak_num(0), passed(0), meta_complete(false), tdes_key(NULL),
 	  version(0),videoid_size(0),videoid(NULL), userid_size(0), userid(NULL),range_size(0),range_start(0),range_end(0),
 	  original_file_size(0),section_size(0),section_count(0),section_length_arr(NULL),reserved_size(0), reserved(NULL),
@@ -740,6 +740,7 @@ public:
   Mp4Trak *trak_vec[MP4_MAX_TRAK_NUM];
 
   double rs;
+  bool is_rs_find;
   double rate;
 
   int64_t ftyp_size;

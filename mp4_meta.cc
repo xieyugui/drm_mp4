@@ -240,6 +240,7 @@ int Mp4Meta::process_drm_header_sections() {
 	tag_pos += read_size;
 
 	drm_head_length = tag_pos; //drm head 的长度
+	TSDebug(PLUGIN_NAME, "process_drm_header_sections tag_pos=%ld meta_avail=%ld", tag_pos,TSIOBufferReaderAvail(meta_reader));
 
 	if (reserved_size <= 0) {
 		this->current_handler = &Mp4Meta::process_decrypt_mp4_body;
@@ -274,6 +275,8 @@ int Mp4Meta::process_drm_header_reserved() {
 
 //根据头信息进行解密
 int Mp4Meta::process_decrypt_mp4_body() {
+
+	TSDebug(PLUGIN_NAME, "process_decrypt_mp4_body drm_head_length=%ld", drm_head_length);
 	//解析section_length_arr
 	uint64_t dec_length;
 	int64_t avail;
@@ -297,6 +300,8 @@ int Mp4Meta::process_decrypt_mp4_body() {
 	if (avail < dec_length)
 		return 0;
 
+	TSDebug(PLUGIN_NAME, "process_decrypt_mp4_body meta_reader avail=%ld", avail);
+
 	TSIOBufferCopy(des_buffer, meta_reader, avail, 0); //全部拷贝到des_buffer中
 	TSIOBufferReaderConsume(meta_reader, avail);
 
@@ -317,7 +322,10 @@ int Mp4Meta::process_decrypt_mp4_body() {
 
 	if (avail > 0) {
 		TSIOBufferCopy(meta_buffer, des_reader, avail, 0);
+		TSIOBufferReaderConsume(des_reader, avail);
 	}
+	this->meta_avail = TSIOBufferReaderAvail(meta_reader);
+	TSDebug(PLUGIN_NAME, "process_decrypt_mp4_body meta_reader avail=%ld", TSIOBufferReaderAvail(meta_reader));
 
 	tag_pos += MP4_DES_ADD_LENGTH * section_count; //已经消费了多少  解密之后 又放回去了，也就是 136 － 128
 
@@ -382,6 +390,7 @@ static int64_t IOBufferReaderCopy(TSIOBufferReader readerp, void *buf,
 
 int Mp4Meta::process_des_mp4_body() {
 
+
 	int64_t des_avail;
 	uint64_t section_arr[section_count], section_size;
 	uint32_t i, need_length;
@@ -427,6 +436,7 @@ int Mp4Meta::process_des_mp4_body() {
 	}
 
 	this->is_des_body = true;
+	TSDebug(PLUGIN_NAME, "process_des_mp4_body  success");
 	return 1;
 }
 
@@ -435,6 +445,8 @@ int Mp4Meta::parse_meta(bool body_complete) {
 	int ret, rc;
 
 	meta_avail = TSIOBufferReaderAvail(meta_reader);
+	TSDebug(PLUGIN_NAME, "parse drm header meta_avail=%ld",meta_avail);
+
 
 	if (wait_next && wait_next <= meta_avail) { //不合法的box 需要丢弃
 		mp4_meta_consume(wait_next);
@@ -445,9 +457,10 @@ int Mp4Meta::parse_meta(bool body_complete) {
 		return 0;
 
 	//解析drm header
-	TSDebug(PLUGIN_NAME, "start parse drm header");
 	if (!complete_parse_drm_header) {
-		ret = (this->*current_handler)();
+		TSDebug(PLUGIN_NAME, "start parse drm header");
+		ret = (this->*current_handler)();//里面注意更新meta_avail
+		TSDebug(PLUGIN_NAME, "end parse drm header ret=%d", ret);
 		if (ret > 0) {
 			complete_parse_drm_header = true;
 		} else if (ret == 0) {
@@ -461,9 +474,12 @@ int Mp4Meta::parse_meta(bool body_complete) {
 		}
 	}
 
-	TSDebug(PLUGIN_NAME, "end parse drm header ret=%d", ret);
+
+//	meta_avail = TSIOBufferReaderAvail(meta_reader);//上面发生变化这里需要再次更改
+//	TSDebug(PLUGIN_NAME, "parse drm header meta_avail=%ld",meta_avail);
 
 	TSDebug(PLUGIN_NAME, "start parse_root_atoms");
+
 	ret = this->parse_root_atoms(); //从根开始解析mp4
 	TSDebug(PLUGIN_NAME, "end parse_root_atoms ret = %d", ret);
 
@@ -480,6 +496,7 @@ int Mp4Meta::parse_meta(bool body_complete) {
 	}
 //	  this->duration_sample_size = this->passed;
 	TSDebug(PLUGIN_NAME, "start post_process_meta");
+	TSDebug(PLUGIN_NAME, "start parse_meta a content_length=%ld",this->content_length); //ftyp 的长度
 	// generate new meta data
 	TSDebug(PLUGIN_NAME, "start post_process_meta");
 	rc = this->post_process_meta();
@@ -488,8 +505,10 @@ int Mp4Meta::parse_meta(bool body_complete) {
 		return -1;
 	}
 
-	//DES 加密吼，content_length 也需要增加
-	this->content_length += section_count * MP4_DES_ADD_LENGTH;
+	//DES 加密吼，content_length 也需要增加   drm_length 已经加了
+//	this->content_length += section_count * MP4_DES_ADD_LENGTH;
+
+	TSDebug(PLUGIN_NAME, "start parse_meta b content_length=%ld",this->content_length);
 	return 1;
 }
 
@@ -577,6 +596,10 @@ int Mp4Meta::post_process_meta() {
 		return -1;
 	}
 
+	if(this->start <= this->passed) {//请求的start > ftyp + moov
+		return -1;
+	}
+
 	//总长度－ 丢弃的长度 － drm header 以及des解密减少的字节和des(videoid)的长度
 	this->drm_length = this->tag_pos + this->videoid_size + MP4_DES_ADD_LENGTH;
 
@@ -597,7 +620,7 @@ int Mp4Meta::post_process_meta() {
 	}
 	TSDebug(PLUGIN_NAME, "post_process_meta moov_size = %d", this->moov_size);
 
-	start_offset = cl; //文件总长度
+	start_offset = this->original_file_size; //文件总长度
 	TSDebug(PLUGIN_NAME, "post_process_meta befor for start_offset = %d",
 			start_offset);
 	for (i = 0; i < trak_num; i++) { //下面开始遍历track
@@ -669,11 +692,10 @@ int Mp4Meta::post_process_meta() {
 	}
 
 	this->moov_size += 8;
-	TSDebug(PLUGIN_NAME, "yyyyy this->moov_size=%ld", this->moov_size);
+	TSDebug(PLUGIN_NAME, "yyyyy this->moov_size=%ld content_length=%ld", this->moov_size, this->content_length);
 	mp4_reader_set_32value(moov_atom.reader, 0, this->moov_size);
 	this->content_length += this->moov_size;
-	TSDebug(PLUGIN_NAME, "yyyyy this->content_length=%ld",
-			this->content_length);
+	TSDebug(PLUGIN_NAME, "yyyyy this->content_length=%ld",this->content_length);
 
 	adjustment = this->ftyp_size + this->moov_size
 			+ mp4_update_mdat_atom(start_offset) - start_offset; //mdat 起始大小
@@ -708,6 +730,8 @@ int Mp4Meta::post_process_meta() {
 	drm_avail = TSIOBufferReaderAvail(drm_reader);
 	TSIOBufferCopy(out_handle.buffer, drm_reader, drm_avail, 0);
 	TSIOBufferReaderConsume(drm_reader, drm_avail);
+
+	TSDebug(PLUGIN_NAME, "mp4_parse_meta  drm_avail  ddddddddddddd= %ld", drm_avail);
 
 	return 0;
 }
@@ -1564,7 +1588,7 @@ int Mp4Meta::mp4_get_start_sample(Mp4Trak *trak) {
 	TSIOBufferReader readerp;
 	uint32_t size;
 
-	if (this->rs > 0) { //说明已经找到视频的start_sample 了，开始到mp4_update_stts_atom根据时间查找音频的start_sample
+	if (this->is_rs_find) { //说明已经找到视频的start_sample 了，开始到mp4_update_stts_atom根据时间查找音频的start_sample
 		return 0;
 	}
 
@@ -1620,6 +1644,10 @@ int Mp4Meta::mp4_get_start_sample(Mp4Trak *trak) {
 			old_sample, start_sample, key_sample);
 
 	trak->start_sample = start_sample; //找到start_sample
+
+	if(trak->start_sample <=0 ) {
+		return -1;
+	}
 
 	return 0;
 }
@@ -1682,63 +1710,6 @@ int Mp4Meta::mp4_update_stsz_atom(Mp4Trak *trak) {
 
 	return 0;
 }
-
-//int
-//Mp4Meta::mp4_update_stsz_atom(Mp4Trak *trak)
-//{
-//	  uint32_t i;
-//	  int64_t atom_size, avail;
-//	  uint32_t pass;
-//	  TSIOBufferReader readerp;
-//
-//	  if (trak->atoms[MP4_STSZ_DATA].buffer == NULL)
-//	    return 0;
-//
-//	  if (trak->start_sample > trak->sample_sizes_entries)//最多就是相等
-//	    return -1;
-//
-//	  readerp = TSIOBufferReaderClone(trak->atoms[MP4_STSZ_DATA].reader);
-//	  avail = TSIOBufferReaderAvail(readerp);
-//	  TSDebug(PLUGIN_NAME, "mp4_update_stsz_atom avail=%ld",avail);
-//	  // * sample 1: sample size $000000ae
-//	  pass = trak->start_sample * sizeof(uint32_t);//需要丢弃的数据
-//	  TSDebug(PLUGIN_NAME, "mp4_update_stsz_atom sample_sizes_entries=%d",trak->sample_sizes_entries);
-//	  uint32_t sample_size;
-//	  int64_t duration_sample_size;
-//	  duration_sample_size = 0;
-//	  for (i = 0; i < trak->sample_sizes_entries; i++) {
-//		  sample_size = mp4_reader_get_32value(readerp, 0);
-//		  duration_sample_size += sample_size;
-//		  TSDebug(PLUGIN_NAME, "mp4_update_stsz_atom sample_size=%u, duration_sample_size=%ld",sample_size,duration_sample_size);
-//		  if(i == (trak->start_sample -1))
-//			  break;
-//		  TSIOBufferReaderConsume(readerp, sizeof(uint32_t));
-//	  }
-//	  TSIOBufferReaderFree(readerp);
-//
-//	  readerp = TSIOBufferReaderClone(trak->atoms[MP4_STSZ_DATA].reader);
-//	  avail = TSIOBufferReaderAvail(readerp);
-//	  TSDebug(PLUGIN_NAME, "mp4_update_stsz_atom avail=%ld",avail);
-//	  TSIOBufferReaderConsume(readerp, pass - sizeof(uint32_t) * (trak->chunk_samples));//将多余的去掉
-//
-//	  for (i = 0; i < trak->chunk_samples; i++) {
-//	    trak->chunk_samples_size += mp4_reader_get_32value(readerp, 0);
-//	    TSIOBufferReaderConsume(readerp, sizeof(uint32_t));
-//	  }
-//
-//	  atom_size = sizeof(mp4_stsz_atom) + avail - pass;
-//	  TSDebug(PLUGIN_NAME, "mp4_update_stsz_atom pass=%u", pass);
-//	  trak->size += atom_size;
-//
-//	  mp4_reader_set_32value(trak->atoms[MP4_STSZ_ATOM].reader, offsetof(mp4_stsz_atom, size), atom_size);
-//	  mp4_reader_set_32value(trak->atoms[MP4_STSZ_ATOM].reader, offsetof(mp4_stsz_atom, entries),
-//	                         trak->sample_sizes_entries - trak->start_sample);
-//
-//	  TSIOBufferReaderConsume(trak->atoms[MP4_STSZ_DATA].reader, pass);
-//	  TSIOBufferReaderFree(readerp);
-//
-//	  return 0;
-//}
 
 int Mp4Meta::mp4_update_stts_atom(Mp4Trak *trak) {
 	uint32_t i, entries, count, duration, pass;
@@ -1836,6 +1807,7 @@ int Mp4Meta::mp4_update_stts_atom(Mp4Trak *trak) {
 				* ((double) trak->duration / trak->timescale) * 1000;
 		TSDebug(PLUGIN_NAME, "mp4_update_stsz_atom rs=%lf, sum=%ld", this->rs,
 				sum);
+		this->is_rs_find = true;
 	}
 
 	left = entries - i;	  //之前遍历，丢弃了，剩下多少数据
@@ -2010,13 +1982,6 @@ int Mp4Meta::mp4_update_stsc_atom(Mp4Trak *trak) {
 	for (i = 1; i < trak->sample_to_chunk_entries; i++) {  //该trak一共有多少个chunk
 		next_chunk = mp4_reader_get_32value(readerp,
 				offsetof(mp4_stsc_entry, chunk));
-		//debug
-		TSDebug(PLUGIN_NAME, "mp4_update_stsc_atom next_chunk=%u %u %u",
-				next_chunk,
-				mp4_reader_get_32value(readerp,
-						offsetof(mp4_stsc_entry, samples)),
-				mp4_reader_get_32value(readerp, offsetof(mp4_stsc_entry, id)));
-		//over debug
 		n = (next_chunk - chunk) * samples;
 
 		if (start_sample <= n) {
@@ -2091,9 +2056,6 @@ int Mp4Meta::mp4_update_stsc_atom(Mp4Trak *trak) {
 	for (j = i; j < trak->sample_to_chunk_entries; j++) {
 		chunk = mp4_reader_get_32value(readerp,
 				offsetof(mp4_stsc_entry, chunk));
-		TSDebug(PLUGIN_NAME,
-				"mp4_update_stsc_atom cccc chunk=%lu, trak->start_chunk=%u",
-				chunk, trak->start_chunk);
 		chunk -= trak->start_chunk;
 		mp4_reader_set_32value(readerp, offsetof(mp4_stsc_entry, chunk), chunk);
 		TSIOBufferReaderConsume(readerp, sizeof(mp4_stsc_entry));
@@ -2277,6 +2239,9 @@ int64_t Mp4Meta::mp4_update_mdat_atom(int64_t start_offset) {
 	}
 
 	this->content_length += atom_header_size + atom_data_size;
+
+	TSDebug(PLUGIN_NAME,"mp4_update_mdat_atom atom_header_size=%ld content_length=%ld",
+				atom_header_size, this->content_length);
 
 	mp4_set_32value(atom_header, atom_size);
 	mp4_set_atom_name(atom_header, 'm', 'd', 'a', 't');
