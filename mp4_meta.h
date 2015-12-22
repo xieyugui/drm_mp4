@@ -509,8 +509,9 @@ class Mp4Trak
 public:
   Mp4Trak()
     : timescale(0), duration(0), time_to_sample_entries(0), sample_to_chunk_entries(0), sync_samples_entries(0),
-      composition_offset_entries(0), sample_sizes_entries(0), chunks(0), start_sample(0), start_chunk(0), chunk_samples(0),
-      chunk_samples_size(0), start_offset(0), tkhd_size(0), mdhd_size(0), hdlr_size(0), vmhd_size(0), smhd_size(0), dinf_size(0),
+      composition_offset_entries(0), sample_sizes_entries(0), chunks(0), start_sample(0), start_chunk(0), start_chunk_size(0),start_chunk_samples(0),
+	  last_start_chunk_samples(0),
+	  chunk_samples(0),chunk_samples_size(0), start_offset(0), tkhd_size(0), mdhd_size(0), hdlr_size(0), vmhd_size(0), smhd_size(0), dinf_size(0),
       size(0)
   {
     memset(&stsc_chunk_entry, 0, sizeof(mp4_stsc_entry));
@@ -531,6 +532,9 @@ public:
 
   uint32_t start_sample;
   uint32_t start_chunk;
+  uint64_t start_chunk_size;
+  uint32_t start_chunk_samples;
+  uint32_t last_start_chunk_samples;//查找最接近的chunk 的sample个数
   uint32_t chunk_samples;
   uint64_t chunk_samples_size;
   off_t start_offset;
@@ -694,8 +698,8 @@ public:
   int mp4_update_trak_atom(Mp4Trak *trak);
 
   int mp4_get_start_sample(Mp4Trak *trak);
-  off_t mp4_get_start_chunk_offset_co64(Mp4Trak *trak);
-  off_t mp4_get_start_chunk_offset_stco(Mp4Trak *trak);
+  int mp4_get_start_chunk_offset_co64(Mp4Trak *trak);
+  int mp4_get_start_chunk_offset_stco(Mp4Trak *trak);
 
   int64_t mp4_update_mdat_atom(int64_t start_offset);
   int mp4_adjust_co64_atom(Mp4Trak *trak, off_t adjustment);

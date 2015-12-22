@@ -419,6 +419,7 @@ static int mp4_transform_handler(TSCont contp, Mp4Context *mc) {
 						write_down = true;
 						if(des_avail- avail > 0)
 							mtc->total += des_avail- avail;
+						TSDebug(PLUGIN_NAME, "parse_over f des_avail=%ld, avail= %ld", des_avail, avail);
 					}
 				}
 
@@ -474,7 +475,7 @@ static int mp4_parse_meta(Mp4TransformContext *mtc, bool body_complete) //开始
 	TSDebug(PLUGIN_NAME, "mp4_parse_meta ret = %d", ret);
 	if (ret > 0) { // meta success
 		mtc->tail = mm->start_pos; //start position of the new mp4 file
-		mtc->content_length = mm->content_length; //the size of the new mp4 file
+		mtc->content_length = mm->content_length; //-183; //the size of the new mp4 file
 		mtc->meta_length = TSIOBufferReaderAvail(mm->out_handle.reader);
 	}
 
