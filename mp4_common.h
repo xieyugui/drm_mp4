@@ -60,7 +60,7 @@ public:
 class Mp4TransformContext
 {
 public:
-  Mp4TransformContext(float offset, int64_t cl, u_char *des_key)
+  Mp4TransformContext(int64_t offset, int64_t cl, u_char *des_key, bool is_n_md)
     : total(0), tail(0), pos(0), content_length(0), meta_length(0), parse_over(false), raw_transform(false)
   {
     res_buffer = TSIOBufferCreate();
@@ -70,6 +70,7 @@ public:
     mm.start = offset; //起始长度
     mm.cl = cl; //文件总长度
     mm.tdes_key = des_key;
+    mm.is_need_md = is_n_md;
   }
 
   ~Mp4TransformContext()
@@ -107,7 +108,7 @@ public:
 class Mp4Context
 {
 public:
-  Mp4Context(float s) : start(s), cl(0), mtc(NULL), transform_added(false){};
+  Mp4Context(int64_t s) : start(s), cl(0), mtc(NULL), transform_added(false){};
 
   ~Mp4Context()
   {
@@ -118,7 +119,7 @@ public:
   }
 
 public:
-  float start; //起始点
+  int64_t start; //起始点
   int64_t cl; //文件总长度
   Mp4TransformContext *mtc;
 

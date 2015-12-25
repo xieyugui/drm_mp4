@@ -55,12 +55,6 @@ typedef enum { FLV_VIDEO, VIDEO_PCF , VIDEO_PCM  } VideoType;
 #define mp4_get_32value(p) \
   (((uint32_t)((u_char *)(p))[0] << 24) + (((u_char *)(p))[1] << 16) + (((u_char *)(p))[2] << 8) + (((u_char *)(p))[3]))
 
-/* swap 32 bits integers */
-# define swap_uint32(x) ((uint32_t)((((x) & 0x000000FFU) << 24) | \
-    (((x) & 0x0000FF00U) << 8)  | \
-    (((x) & 0x00FF0000U) >> 8)  | \
-    (((x) & 0xFF000000U) >> 24)))
-
 #define mp4_set_32value(p, n)               \
   ((u_char *)(p))[0] = (u_char)((n) >> 24); \
   ((u_char *)(p))[1] = (u_char)((n) >> 16); \
@@ -560,7 +554,7 @@ public:
       ftyp_size(0), moov_size(0), start_pos(0), timescale(0), trak_num(0), passed(0), meta_complete(false), tdes_key(NULL),
 	  version(0),videoid_size(0),videoid(NULL), userid_size(0), userid(NULL),range_size(0),range_start(0),range_end(0),
 	  original_file_size(0),section_size(0),section_count(0),section_length_arr(NULL),reserved_size(0), reserved(NULL),
-	  tag_pos(0),drm_head_length(0),complete_parse_drm_header(false),duration_pos(0),drm_length(0),is_des_body(false)
+	  tag_pos(0),drm_head_length(0),complete_parse_drm_header(false),duration_pos(0),drm_length(0),is_des_body(false),is_need_md(false)
   {
     memset(trak_vec, 0, sizeof(trak_vec));
 
@@ -645,7 +639,7 @@ public:
   int process_drm_header_sections();
   int process_drm_header_reserved();
   int process_decrypt_mp4_body();//根据头信息进行解密
-  int process_des_mp4_body();
+  int process_encrypt_mp4_body();
 
   int parse_meta(bool body_complete);
 
@@ -787,6 +781,7 @@ public:
   int64_t duration_pos;//MP4 从头开始计数，为了方便计算该丢弃多少数据
   int64_t drm_length;
   bool is_des_body;//是否已经加密过
+  bool is_need_md;
 };
 
 #endif
