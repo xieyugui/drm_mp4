@@ -75,13 +75,9 @@ void TSRemapDeleteInstance(void * /* ih ATS_UNUSED */) {
 
 TSRemapStatus TSRemapDoRemap(void * /* ih ATS_UNUSED */, TSHttpTxn rh,
 		TSRemapRequestInfo *rri) {
-	const char *method, *query, *path, *range;
-	int method_len, query_len, path_len, range_len;
-	size_t val_len;
-	const char *val;
-	int ret;
+	const char *method, *path, *range;
+	int method_len, path_len, range_len;
 	int64_t start;
-	VideoType video_type;
 	TSMLoc ae_field, range_field, no_des_field;
 	TSCont contp;
 	Mp4Context *mc;
@@ -146,8 +142,7 @@ TSRemapStatus TSRemapDoRemap(void * /* ih ATS_UNUSED */, TSHttpTxn rh,
 	}
 
 	mc = new Mp4Context(start);
-	TSDebug(PLUGIN_NAME, "TSRemapDoRemap start=%ld, type=%d", start,
-			video_type);
+	TSDebug(PLUGIN_NAME, "TSRemapDoRemap start=%ld", start);
 	contp = TSContCreate(mp4_handler, NULL);
 	TSContDataSet(contp, mc);
 

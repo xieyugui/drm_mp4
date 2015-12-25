@@ -68,7 +68,6 @@ static int64_t IOBufferReaderCopy(TSIOBufferReader readerp, void *buf,
 
 //#########################drm header start#############################//
 int Mp4Meta::parse_drm(bool body_complete) {
-	int64_t avail, head_avail;
 	int rc;
 
 	rc = (this->*current_handler)();
@@ -192,11 +191,11 @@ int Mp4Meta::process_drm_header_range() {
 	range_start = mp4_get_64value(buf);
 	range_end = mp4_get_64value(buf + sizeof(uint64_t));
 	original_file_size = mp4_get_64value(buf + sizeof(uint64_t)* 2);
-	TSDebug(PLUGIN_NAME,
-			"process_drm_header_range range_start=%ld, range_end=%ld, original_file_size=%ld",
-			range_start, range_end, original_file_size);
+//	TSDebug(PLUGIN_NAME,
+//			"process_drm_header_range range_start=%ld, range_end=%ld, original_file_size=%ld",
+//			range_start, range_end, original_file_size);
 
-	if ((range_start >= range_end) || original_file_size >= this->cl)
+	if ((range_start >= range_end) || ((int64_t)original_file_size >= this->cl))
 		return -1;
 
 	section_size = mp4_get_32value(buf + range_body_length);
@@ -208,7 +207,7 @@ int Mp4Meta::process_drm_header_range() {
 	tag_pos += read_size;
 
 	TSDebug(PLUGIN_NAME,
-			"process_drm_header_range  section_size=%d, section_count=%d, tag_pos=%d",
+			"process_drm_header_range  section_size=%d, section_count=%d, tag_pos=%ld",
 			section_size, section_count, tag_pos);
 
 	if (section_count <= 0
@@ -280,22 +279,21 @@ int Mp4Meta::process_decrypt_mp4_body() {
 	int64_t avail;
 	uint64_t section_arr[section_count];
 	u_char *des_buf;
-	int i;
+	uint32_t i;
 	dec_length = 0;
 	for (i = 0; i < section_count; i++) {
-		section_arr[i] = mp4_get_64value(
-				section_length_arr + i * sizeof(uint64_t));
-		TSDebug(PLUGIN_NAME, "process_decrypt_mp4_body section_arr=%.ld",
-				section_arr[i]);
+		section_arr[i] = mp4_get_64value(section_length_arr + i * sizeof(uint64_t));
+//		TSDebug(PLUGIN_NAME, "process_decrypt_mp4_body section_arr=%.ld",
+//				section_arr[i]);
 		dec_length += section_arr[i];
 	}
 
-	if ((this->cl < dec_length)
+	if ((this->cl < (int64_t)dec_length)
 			|| (dec_length > MP4_DES_LENGTH * MP4_DES_MAX_COUNT))
 		return -1;
 
 	avail = TSIOBufferReaderAvail(meta_reader);
-	if (avail < dec_length)
+	if (avail < (int64_t)dec_length)
 		return 0;
 
 
@@ -304,11 +302,10 @@ int Mp4Meta::process_decrypt_mp4_body() {
 
 	des_buf = (u_char *) TSmalloc(sizeof(u_char) * MP4_DES_LENGTH);
 	for (i = 0; i < section_count; i++) {
-		memset(des_buf, 0, sizeof(des_buf));
+		memset(des_buf, 0, MP4_DES_LENGTH);
 		IOBufferReaderCopy(des_reader, des_buf, section_arr[i]);
 		des_decrypt(tdes_key, des_buf, section_arr[i]);
-		TSIOBufferWrite(meta_buffer, des_buf,
-				section_arr[i] - MP4_DES_ADD_LENGTH);
+		TSIOBufferWrite(meta_buffer, des_buf,section_arr[i] - MP4_DES_ADD_LENGTH);
 		TSIOBufferReaderConsume(des_reader, section_arr[i]);
 	}
 
@@ -404,7 +401,7 @@ int Mp4Meta::process_encrypt_mp4_body() {
 	buf = (u_char *) TSmalloc(sizeof(u_char) * MP4_DES_LENGTH);
 	int result;
 	for (i = 0; i < section_count; i++) {
-		memset(buf, 0, sizeof(buf));
+		memset(buf, 0, MP4_DES_LENGTH);
 		section_size = section_arr[i] - MP4_DES_ADD_LENGTH;
 		IOBufferReaderCopy(des_reader, buf, section_size);
 		TSIOBufferReaderConsume(des_reader, section_size);
@@ -506,7 +503,6 @@ int Mp4Meta::change_drm_header(off_t start_offset, off_t adjustment) {
 	uint32_t i;
 	uint32_t new_section_count;
 	int64_t new_mp4_length;
-	uint64_t o_file_size;
 	reserved_size_b = sizeof(uint32_t);
 	range_body_size = sizeof(uint64_t) * 3;
 	u_char buf[range_body_size];
@@ -1547,7 +1543,6 @@ int Mp4Meta::mp4_read_mdat_atom(int64_t /* atom_header_size ATS_UNUSED */,
 }
 
 int Mp4Meta::mp4_get_start_sample(Mp4Trak *trak) {
-	int ret;
 	uint32_t start_sample, entries, sample_size, i;
 	uint32_t key_sample, old_sample;
 	TSIOBufferReader readerp;
@@ -1572,10 +1567,10 @@ int Mp4Meta::mp4_get_start_sample(Mp4Trak *trak) {
 	//chunk 490 sample 3 id 1
 	//第500个sample 500 ＝ 28 ＊ 13 ＋ 12 ＋ 13*9 ＋ 7
 
-	uint32_t chunk,samples,id, next_chunk, n, sum_chunks, now_chunks;
+	uint32_t chunk,samples, next_chunk, sum_chunks, now_chunks;
 	chunk = mp4_reader_get_32value(readerp, offsetof(mp4_stsc_entry, chunk));
 	samples = mp4_reader_get_32value(readerp,offsetof(mp4_stsc_entry, samples));
-	id = mp4_reader_get_32value(readerp, offsetof(mp4_stsc_entry, id));
+//	id = mp4_reader_get_32value(readerp, offsetof(mp4_stsc_entry, id));
 	TSIOBufferReaderConsume(readerp, sizeof(mp4_stsc_entry));
 
 	sum_chunks = 0;
@@ -1594,7 +1589,7 @@ int Mp4Meta::mp4_get_start_sample(Mp4Trak *trak) {
 
 		chunk = next_chunk;
 		samples = mp4_reader_get_32value(readerp,offsetof(mp4_stsc_entry, samples));
-		id = mp4_reader_get_32value(readerp, offsetof(mp4_stsc_entry, id));
+//		id = mp4_reader_get_32value(readerp, offsetof(mp4_stsc_entry, id));
 		TSIOBufferReaderConsume(readerp, sizeof(mp4_stsc_entry));
 	}
 
