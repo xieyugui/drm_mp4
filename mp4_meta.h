@@ -35,7 +35,7 @@
 #define PLUGIN_NAME "drm_mp4"
 
 #define MP4_MAX_TRAK_NUM 6
-#define MP4_MAX_BUFFER_SIZE (40 * 1024 * 1024) //10M --40 稍微改大一点
+#define MP4_MAX_BUFFER_SIZE (15 * 1024 * 1024) //15M  稍微改大一点
 #define MP4_MIN_BUFFER_SIZE 1024 //1K
 
 #define MP4_NEED_DES_LENGTH 8176
