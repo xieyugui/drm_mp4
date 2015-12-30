@@ -31,7 +31,7 @@
 #include "mp4_meta.h"
 
 //des key
-static u_char *des_key;
+static u_char *des_key = NULL;
 
 class IOHandle
 {

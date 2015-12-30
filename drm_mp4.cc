@@ -67,10 +67,7 @@ TSReturnCode TSRemapNewInstance(int argc, char *argv[] /* argv ATS_UNUSED */,
 }
 
 void TSRemapDeleteInstance(void * /* ih ATS_UNUSED */) {
-	if (des_key) {
-		TSfree((u_char * ) des_key);
-	}
-	TSDebug(PLUGIN_NAME, "free des key success");
+
 }
 
 TSRemapStatus TSRemapDoRemap(void * /* ih ATS_UNUSED */, TSHttpTxn rh,
