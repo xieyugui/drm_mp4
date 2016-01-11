@@ -550,11 +550,12 @@ class Mp4Meta
 {
 public:
   Mp4Meta()
-    : start(0), cl(0), content_length(0), meta_atom_size(0), meta_avail(0), wait_next(0), need_size(0), rs(0),is_rs_find(false),rate(0),
-      ftyp_size(0), moov_size(0), start_pos(0), timescale(0), trak_num(0), passed(0), meta_complete(false), tdes_key(NULL),
+    : start(0),end(0), cl(0), content_length(0), meta_atom_size(0), meta_avail(0), wait_next(0), need_size(0), rs(0),is_rs_find(false),rate(0),
+      ftyp_size(0), moov_size(0), start_pos(0), end_pos(0) , timescale(0), trak_num(0), passed(0), meta_complete(false), tdes_key(NULL),
 	  version(0),videoid_size(0),videoid(NULL), userid_size(0), userid(NULL),range_size(0),range_start(0),range_end(0),
-	  original_file_size(0),section_size(0),section_count(0),section_length_arr(NULL),reserved_size(0), reserved(NULL),
-	  drm_head_length(0),tag_pos(0),complete_parse_drm_header(false),duration_pos(0),drm_length(0),is_des_body(false),is_need_md(false)
+	  original_file_size(0),section_size(0),section_count(0), old_section_count(0),section_length_arr(NULL),reserved_size(0), reserved(NULL),
+	  drm_head_length(0),tag_pos(0),complete_parse_drm_header(false),duration_pos(0),drm_length(0),is_des_body(false),is_need_md(false),
+	  small_des_add_length(0)
   {
     memset(trak_vec, 0, sizeof(trak_vec));
 
@@ -631,7 +632,6 @@ public:
   size_t get_drm_header_size();
   int read_drm_header(TSIOBufferReader readerp, drm_header * header);
 
-  int parse_drm(bool body_complete);
   int process_drm_header();
   int process_drm_header_videoid();
   int process_drm_header_userid();
@@ -706,8 +706,12 @@ public:
 
   int change_drm_header(off_t start_offset, off_t adjustment);
 
+  void get_des_videoid(u_char *des_videoid, uint32_t *d_v_length);
+//  void get_des_null(u_char *des_null, uint32_t *d_n_length);
+
 public:
-  int64_t start;          // requested start time, measured in milliseconds.
+  int64_t start;
+  int64_t end;
   int64_t cl;             // the total size of the mp4 file
   int64_t content_length; // the size of the new mp4 file
   int64_t meta_atom_size;
@@ -744,6 +748,7 @@ public:
   int64_t ftyp_size;
   int64_t moov_size;
   int64_t start_pos; // start position of the new mp4 file
+  int64_t end_pos;
   uint32_t timescale;
   uint32_t trak_num;
   int64_t passed;
@@ -769,6 +774,7 @@ public:
 
   uint32_t section_size;//加密片段标签
   uint32_t section_count; // count > 0 && count <= 5
+  uint32_t old_section_count;
   u_char *section_length_arr;// length > 0 && length <= 8184  enc 8176| dec 8184
   //若请求 mp4 文件的 Range 小于 5*8176
   //sections tag 的 count 字段 = range/8176 + 1;
@@ -782,6 +788,7 @@ public:
   int64_t drm_length;
   bool is_des_body;//是否已经加密过
   bool is_need_md;
+  uint32_t small_des_add_length; //当des加密小于key 的长度的时候，加密出来就是key 的长度
 };
 
 #endif

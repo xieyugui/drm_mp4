@@ -17,5 +17,5 @@
 include $(top_srcdir)/build/plugins.mk
 
 pkglib_LTLIBRARIES = drm_mp4.la
-drm_mp4_la_SOURCES = drm_mp4.cc mp4_common.h mp4_meta.cc mp4_meta.h des.cc des.h
+drm_mp4_la_SOURCES = drm_mp4.cc mp4_context.h mp4_transform_context.cc mp4_transform_context.h mp4_meta.cc mp4_meta.h des.cc des.h
 drm_mp4_la_LDFLAGS = $(TS_PLUGIN_LDFLAGS)

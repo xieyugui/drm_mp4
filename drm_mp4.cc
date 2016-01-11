@@ -14,9 +14,20 @@
  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  See the License for the specific language governing permissions and
  limitations under the License.
+ *
+ * drm_mp4.cc
+ *
+ *  Created on: 2016年1月8日
+ *      Author: xie
+ *
  */
 
-#include "mp4_common.h"
+#include "mp4_context.h"
+
+//des key
+static u_char *des_key = NULL;
+//是否
+static bool is_need_add_mp4_header = false;
 
 static int mp4_handler(TSCont contp, TSEvent event, void *edata);
 static void mp4_cache_lookup_complete(Mp4Context *mc, TSHttpTxn txnp);
@@ -24,39 +35,35 @@ static void mp4_read_response(Mp4Context *mc, TSHttpTxn txnp);
 static void mp4_add_transform(Mp4Context *mc, TSHttpTxn txnp);
 static int mp4_transform_entry(TSCont contp, TSEvent event, void *edata);
 static int mp4_transform_handler(TSCont contp, Mp4Context *mc);
-static int mp4_parse_meta(Mp4TransformContext *mtc, bool body_complete);
 
-//根据range 大小拖动的时候，是否需要更新和增加mp4 header
-//false 直接根据range 跳到相应位置返回就行了
-//true 需要解析头，根据关键帧跳转到相应位置，更新mp4 头，
-static bool is_need_add_mp4_header;
-
-TSReturnCode TSRemapInit(TSRemapInterface *api_info, char *errbuf,
-		int errbuf_size) {
+TSReturnCode TSRemapInit(TSRemapInterface *api_info, char *errbuf,int errbuf_size) {
 	if (!api_info) {
-		snprintf(errbuf, errbuf_size,
-				"[TSRemapInit] - Invalid TSRemapInterface argument");
+		snprintf(errbuf, errbuf_size,"[TSRemapInit] - Invalid TSRemapInterface argument");
 		return TS_ERROR;
 	}
 
 	if (api_info->size < sizeof(TSRemapInterface)) {
-		snprintf(errbuf, errbuf_size,
-				"[TSRemapInit] - Incorrect size of TSRemapInterface structure");
+		snprintf(errbuf, errbuf_size,"[TSRemapInit] - Incorrect size of TSRemapInterface structure");
 		return TS_ERROR;
 	}
 
 	return TS_SUCCESS;
 }
 
-TSReturnCode TSRemapNewInstance(int argc, char *argv[] /* argv ATS_UNUSED */,
-		void **ih, char *errbuf, int errbuf_size) {
+//该插件需要传入des key ，第二个参数是选填，如果是根据字节拖动，是否需要针对mp4头进行处理
+TSReturnCode TSRemapNewInstance(int argc, char *argv[], void **ih, char *errbuf, int errbuf_size) {
 	if (argc < 2) {
 		TSError("[%s] Plugin not initialized, must have des key", PLUGIN_NAME);
 		return TS_ERROR;
 	}
-	is_need_add_mp4_header = false;
+
 	des_key = (u_char *) (TSstrdup(argv[2]));
 	TSDebug(PLUGIN_NAME, "TSRemapNewInstance drm video des key is %s", des_key);
+
+	if(des_key == NULL) {
+		TSError("[%s] Plugin not initialized, must have des key", PLUGIN_NAME);
+		return TS_ERROR;
+	}
 
 	if(argc > 3 && argv[3]){
 		is_need_add_mp4_header = true;
@@ -66,39 +73,36 @@ TSReturnCode TSRemapNewInstance(int argc, char *argv[] /* argv ATS_UNUSED */,
 	return TS_SUCCESS;
 }
 
-void TSRemapDeleteInstance(void * /* ih ATS_UNUSED */) {
+void TSRemapDeleteInstance(void *) {
 
 }
 
-TSRemapStatus TSRemapDoRemap(void * /* ih ATS_UNUSED */, TSHttpTxn rh,
-		TSRemapRequestInfo *rri) {
-	const char *method, *path, *range;
+
+TSRemapStatus TSRemapDoRemap(void * /* ih ATS_UNUSED */, TSHttpTxn rh, TSRemapRequestInfo *rri) {
+	const char *method, *path, *range, *range_separator;
 	int method_len, path_len, range_len;
-	int64_t start;
+	int64_t start, end;
 	TSMLoc ae_field, range_field, no_des_field;
 	TSCont contp;
 	Mp4Context *mc;
 
-	method = TSHttpHdrMethodGet(rri->requestBufp, rri->requestHdrp,
-			&method_len);
+	method = TSHttpHdrMethodGet(rri->requestBufp, rri->requestHdrp, &method_len);
 	if (method != TS_HTTP_METHOD_GET) {
 		return TSREMAP_NO_REMAP;
 	}
 
 	// check suffix
 	path = TSUrlPathGet(rri->requestBufp, rri->requestUrl, &path_len);
-
 	if (path == NULL || path_len <= 4) {
 		return TSREMAP_NO_REMAP;
-
 	} else if (strncasecmp(path + path_len - 4, ".pcm", 4) != 0) {
 		return TSREMAP_NO_REMAP;
 	}
 
 	start = 0;
+	end = 0;
 
-	if (TSUrlHttpQuerySet(rri->requestBufp, rri->requestUrl, "", -1)
-			== TS_ERROR) {
+	if (TSUrlHttpQuerySet(rri->requestBufp, rri->requestUrl, "", -1) == TS_ERROR) {
 		return TSREMAP_NO_REMAP;
 	}
 
@@ -107,39 +111,43 @@ TSRemapStatus TSRemapDoRemap(void * /* ih ATS_UNUSED */, TSHttpTxn rh,
 	if (no_des_field) {
 		return TSREMAP_NO_REMAP;
 	}
-	// remove Range  request Range: bytes=500-999, response Content-Range: bytes 21010-47021/47022
+	// remove Range   #request Range: bytes=500-999, response Content-Range: bytes 21010-47021/47022
 	range_field = TSMimeHdrFieldFind(rri->requestBufp, rri->requestHdrp,TS_MIME_FIELD_RANGE, TS_MIME_LEN_RANGE);
 	if (range_field) {
-		range = TSMimeHdrFieldValueStringGet(rri->requestBufp, rri->requestHdrp,
-				range_field, -1, &range_len);
+		range = TSMimeHdrFieldValueStringGet(rri->requestBufp, rri->requestHdrp,range_field, -1, &range_len);
 		size_t b_len = sizeof("bytes=") - 1;
 		if (range && (strncasecmp(range, "bytes=", b_len) == 0)) {
 			//获取range value
 			start = (int64_t) strtol(range + b_len, NULL, 10);
+			range_separator = strchr(range, '-');
+			if (range_separator) {
+				end = (int64_t) strtol(range_separator + 1, NULL, 10);
+			}
 		}
 		TSMimeHdrFieldDestroy(rri->requestBufp, rri->requestHdrp, range_field);
 		TSHandleMLocRelease(rri->requestBufp, rri->requestHdrp, range_field);
 	}
 
-	if (start == 0) {
+	if (start == 0 && end == 0) {
 		return TSREMAP_NO_REMAP;
-
-	} else if (start < 0) {
+	} else if (start < 0 || end < 0) {
 		TSHttpTxnSetHttpRetStatus(rh, TS_HTTP_STATUS_BAD_REQUEST);
-		TSHttpTxnErrorBodySet(rh, TSstrdup("Invalid request."),
-				sizeof("Invalid request.") - 1, NULL);
+		TSHttpTxnErrorBodySet(rh, TSstrdup("Invalid request."),sizeof("Invalid request.") - 1, NULL);
+	}
+
+	if(start > 0 && end > 0 && end<=start) {
+		return TSREMAP_NO_REMAP;
 	}
 
 	// remove Accept-Encoding
-	ae_field = TSMimeHdrFieldFind(rri->requestBufp, rri->requestHdrp,
-			TS_MIME_FIELD_ACCEPT_ENCODING, TS_MIME_LEN_ACCEPT_ENCODING);
+	ae_field = TSMimeHdrFieldFind(rri->requestBufp, rri->requestHdrp,TS_MIME_FIELD_ACCEPT_ENCODING, TS_MIME_LEN_ACCEPT_ENCODING);
 	if (ae_field) {
 		TSMimeHdrFieldDestroy(rri->requestBufp, rri->requestHdrp, ae_field);
 		TSHandleMLocRelease(rri->requestBufp, rri->requestHdrp, ae_field);
 	}
 
-	mc = new Mp4Context(start);
-	TSDebug(PLUGIN_NAME, "TSRemapDoRemap start=%ld", start);
+	mc = new Mp4Context(start,end);
+	TSDebug(PLUGIN_NAME, "TSRemapDoRemap start=%ld  end=%ld", start, end);
 	contp = TSContCreate(mp4_handler, NULL);
 	TSContDataSet(contp, mc);
 
@@ -192,8 +200,7 @@ static void mp4_cache_lookup_complete(Mp4Context *mc, TSHttpTxn txnp) {
 		return;
 	}
 
-	if (obj_status != TS_CACHE_LOOKUP_HIT_STALE
-			&& obj_status != TS_CACHE_LOOKUP_HIT_FRESH)
+	if (obj_status != TS_CACHE_LOOKUP_HIT_STALE && obj_status != TS_CACHE_LOOKUP_HIT_FRESH)
 		return;
 
 	if (TSHttpTxnCachedRespGet(txnp, &bufp, &hdrp) != TS_SUCCESS) {
@@ -208,8 +215,7 @@ static void mp4_cache_lookup_complete(Mp4Context *mc, TSHttpTxn txnp) {
 
 	n = 0;
 
-	cl_field = TSMimeHdrFieldFind(bufp, hdrp, TS_MIME_FIELD_CONTENT_LENGTH,
-			TS_MIME_LEN_CONTENT_LENGTH);
+	cl_field = TSMimeHdrFieldFind(bufp, hdrp, TS_MIME_FIELD_CONTENT_LENGTH,TS_MIME_LEN_CONTENT_LENGTH);
 	if (cl_field) {
 		n = TSMimeHdrFieldValueInt64Get(bufp, hdrp, cl_field, -1);
 		TSHandleMLocRelease(bufp, hdrp, cl_field);
@@ -222,8 +228,7 @@ static void mp4_cache_lookup_complete(Mp4Context *mc, TSHttpTxn txnp) {
 	TSDebug(PLUGIN_NAME, "mp4_cache_lookup_complete cl %ld", n);
 	mp4_add_transform(mc, txnp);
 
-	release:
-
+release:
 	TSHandleMLocRelease(bufp, TS_NULL_MLOC, hdrp);
 }
 
@@ -257,8 +262,7 @@ static void mp4_read_response(Mp4Context *mc, TSHttpTxn txnp) {
 	mc->cl = n;
 	mp4_add_transform(mc, txnp);
 
-	release:
-
+release:
 	TSHandleMLocRelease(bufp, TS_NULL_MLOC, hdrp);
 }
 
@@ -268,10 +272,10 @@ static void mp4_add_transform(Mp4Context *mc, TSHttpTxn txnp) {
 	if (mc->transform_added)
 		return;
 
-	mc->mtc = new Mp4TransformContext(mc->start, mc->cl, des_key, is_need_add_mp4_header);
+	mc->mtc = new Mp4TransformContext(mc->start, mc->end, mc->cl, des_key, is_need_add_mp4_header);
 
-	TSHttpTxnUntransformedRespCache(txnp, 1);
-	TSHttpTxnTransformedRespCache(txnp, 0);
+	TSHttpTxnUntransformedRespCache(txnp, 1);//告诉TS只缓存transform之前的数据，不缓存transform之后的数据
+	TSHttpTxnTransformedRespCache(txnp, 0);//告诉TS只缓存transform之前的数据，不缓存transform之后的数据
 
 	connp = TSTransformCreate(mp4_transform_entry, txnp);
 	TSContDataSet(connp, mc);
@@ -280,8 +284,7 @@ static void mp4_add_transform(Mp4Context *mc, TSHttpTxn txnp) {
 	mc->transform_added = true;
 }
 
-static int mp4_transform_entry(TSCont contp, TSEvent event,
-		void * /* edata ATS_UNUSED */) {
+static int mp4_transform_entry(TSCont contp, TSEvent event, void * /* edata ATS_UNUSED */) {
 	TSVIO input_vio;
 	Mp4Context *mc = (Mp4Context *) TSContDataGet(contp);
 
@@ -290,7 +293,7 @@ static int mp4_transform_entry(TSCont contp, TSEvent event,
 		return 0;
 	}
 
-	switch (event) {
+	switch(event) {
 	case TS_EVENT_ERROR:
 		input_vio = TSVConnWriteVIOGet(contp);
 		TSContCall(TSVIOContGet(input_vio), TS_EVENT_ERROR, input_vio);
@@ -302,7 +305,7 @@ static int mp4_transform_entry(TSCont contp, TSEvent event,
 
 	case TS_EVENT_VCONN_WRITE_READY:
 	default:
-		mp4_transform_handler(contp, mc);
+		mp4_transform_handler(contp,mc);
 		break;
 	}
 
@@ -333,17 +336,17 @@ static int mp4_transform_handler(TSCont contp, Mp4Context *mc) {
 		return 1;
 	}
 
-	avail = TSIOBufferReaderAvail(input_reader);
-	upstream_done = TSVIONDoneGet(input_vio);
+	avail = TSIOBufferReaderAvail(input_reader);//总共有多少
+	upstream_done = TSVIONDoneGet(input_vio);//已经完成多少
 
 	TSIOBufferCopy(mtc->res_buffer, input_reader, avail, 0);
 	TSIOBufferReaderConsume(input_reader, avail);
 	TSVIONDoneSet(input_vio, upstream_done + avail);
 
-	toread = TSVIONTodoGet(input_vio);
+	toread = TSVIONTodoGet(input_vio);//还有多少需要读取
 	write_down = false;
-	if (!mtc->parse_over) {
-		ret = mp4_parse_meta(mtc, toread <= 0);
+	if(!mtc->parse_over) {
+		ret = mtc->mp4_parse_meta(toread <= 0);
 		TSDebug(PLUGIN_NAME, "parse_over %d, ret= %d", mtc->parse_over, ret);
 		if (ret == 0)
 			goto trans;
@@ -361,138 +364,19 @@ static int mp4_transform_handler(TSCont contp, Mp4Context *mc) {
 		}
 	}
 
-	avail = TSIOBufferReaderAvail(mtc->res_reader);
+	mtc->copy_drm_or_origin_data(&write_down,&toread);
 
-	if (mtc->raw_transform) {
-		if (avail > 0) {
-			TSIOBufferCopy(mtc->output.buffer, mtc->res_reader, avail, 0);
-			TSIOBufferReaderConsume(mtc->res_reader, avail);
-			mtc->total += avail;
-			write_down = true;
-		}
-
-	} else {
-		mm = &mtc->mm;
-		drm_avail = TSIOBufferReaderAvail(mm->drm_reader);
-		//将res_buffer消费干净
-		if (drm_avail >0 ) {
-			TSIOBufferReaderConsume(mtc->res_reader, avail);
-			//将meta_buffer 剩余的数据拷贝进去
-			meta_avail = TSIOBufferReaderAvail(mm->meta_reader);
-			TSDebug(PLUGIN_NAME, "parse_over meta_avail=%ld", meta_avail);//324264
-			TSIOBufferCopy(mtc->res_buffer, mm->meta_reader, meta_avail, 0);
-			TSIOBufferReaderConsume(mm->meta_reader, meta_avail);
-			//整个文件的长度将从meta_buffer 消费结束地方开始
-			mtc->pos = mm->tag_pos + mm->passed;
-			TSDebug(PLUGIN_NAME, "parse_over pos=%ld, tag_pos= %ld, passed=%ld", mtc->pos, mm->tag_pos, mm->passed);
-
-			// copy the new meta data
-
-			TSIOBufferCopy(mtc->output.buffer, mm->drm_reader,drm_avail, 0);
-			TSIOBufferReaderConsume(mm->drm_reader, drm_avail);
-			mtc->total += drm_avail;
-			write_down = true;
-		}
-
-		// ignore useless part
-		if (mtc->pos < mtc->tail) {
-			avail = TSIOBufferReaderAvail(mtc->res_reader);
-			need = mtc->tail - mtc->pos;
-			if (need > avail) {
-				need = avail;
-			}
-
-			if (need > 0) {
-				TSIOBufferReaderConsume(mtc->res_reader, need);
-				mtc->pos += need;
-			}
-		}
-		// copy the video & audio data
-		if (mtc->pos >= mtc->tail) {
-			avail = TSIOBufferReaderAvail(mtc->res_reader);
-			if (avail > 0) {
-				//这边开始处理des 加密数据
-				des_ret = 0;
-				if (!mm->is_des_body) {
-					TSIOBufferCopy(mm->des_buffer, mtc->res_reader, avail, 0);
-					des_ret = mm->process_encrypt_mp4_body();
-				} else {
-					TSIOBufferCopy(mtc->output.buffer, mtc->res_reader, avail, 0);
-					write_down = true;
-				}
-				TSIOBufferReaderConsume(mtc->res_reader, avail);
-				mtc->pos += avail;
-				mtc->total += avail;
-				if (des_ret > 0) {
-					des_avail = TSIOBufferReaderAvail(mm->out_handle.reader);
-					if (des_avail > 0) {
-						TSIOBufferCopy(mtc->output.buffer,mm->out_handle.reader, des_avail, 0);
-						TSIOBufferReaderConsume(mm->out_handle.reader,des_avail);
-						write_down = true;
-						if(des_avail- avail > 0)
-							mtc->total += des_avail- avail;
-					}
-				}
-
-			}
-		}
-	}
-
-	trans:
-
+trans:
+	TSDebug(PLUGIN_NAME, "trans totail=%ld",mtc->total);
 	if (write_down)
 		TSVIOReenable(mtc->output.vio);
 
 	if (toread > 0) {
-		TSContCall(TSVIOContGet(input_vio), TS_EVENT_VCONN_WRITE_READY,
-				input_vio);
-
+		TSContCall(TSVIOContGet(input_vio), TS_EVENT_VCONN_WRITE_READY,input_vio);
 	} else {
 		TSVIONBytesSet(mtc->output.vio, mtc->total);
-		TSContCall(TSVIOContGet(input_vio), TS_EVENT_VCONN_WRITE_COMPLETE,
-				input_vio);
+		TSContCall(TSVIOContGet(input_vio), TS_EVENT_VCONN_WRITE_COMPLETE,input_vio);
 	}
 
 	return 1;
 }
-
-static int mp4_parse_meta(Mp4TransformContext *mtc, bool body_complete) //开始解释MP4
-		{
-	int ret;
-	int64_t avail, bytes;
-	TSIOBufferBlock blk;
-	const char *data;
-	Mp4Meta *mm;
-
-	mm = &mtc->mm;
-
-	avail = TSIOBufferReaderAvail(mtc->dup_reader);
-	blk = TSIOBufferReaderStart(mtc->dup_reader);
-
-	while (blk != NULL) { //将数据全部拷贝到meta_buffer中去
-		data = TSIOBufferBlockReadStart(blk, mtc->dup_reader, &bytes);
-		if (bytes > 0) {
-			TSIOBufferWrite(mm->meta_buffer, data, bytes);
-		}
-
-		blk = TSIOBufferBlockNext(blk);
-	}
-
-	TSIOBufferReaderConsume(mtc->dup_reader, avail);
-
-	ret = mm->parse_meta(body_complete); //body_complete 是否传输完成
-	TSDebug(PLUGIN_NAME, "mp4_parse_meta ret = %d", ret);
-	if (ret > 0) { // meta success
-		mtc->tail = mm->start_pos; //start position of the new mp4 file
-		mtc->content_length = mm->content_length; //-183; //the size of the new mp4 file
-		TSDebug(PLUGIN_NAME, "mp4_parse_meta  des_reader  tail= %ld content_length=%ld", mtc->tail,mtc->content_length);
-	}
-
-	if (ret != 0) { //如果最后有结果了，不管成功还是失败 都销毁dup_reader
-		TSIOBufferReaderFree(mtc->dup_reader);
-		mtc->dup_reader = NULL;
-	}
-
-	return ret;
-}
-
