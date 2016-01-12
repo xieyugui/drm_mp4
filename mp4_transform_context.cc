@@ -32,7 +32,7 @@ int Mp4TransformContext::mp4_parse_meta(bool body_complete) {
 		this->tail = this->mm.start_pos; //start position of the new mp4 file
 		this->end_tail = this->mm.end_pos;
 		this->content_length = this->mm.content_length; //-183; //the size of the new mp4 file
-		TSDebug(PLUGIN_NAME, "mp4_parse_meta  des_reader  tail= %ld end_tail=%ld content_length=%ld", this->tail,this->end_tail,this->content_length);
+//		TSDebug(PLUGIN_NAME, "mp4_parse_meta  des_reader  tail= %ld end_tail=%ld content_length=%ld", this->tail,this->end_tail,this->content_length);
 	}
 
 	if (ret != 0) { //如果最后有结果了，不管成功还是失败 都销毁dup_reader
@@ -78,7 +78,7 @@ int Mp4TransformContext::copy_drm_data(bool *write_down) {
 		TSIOBufferReaderConsume(this->mm.meta_reader, meta_avail);
 		//整个文件的长度将从meta_buffer 消费结束地方开始
 		this->pos = this->mm.tag_pos + this->mm.passed;
-		TSDebug(PLUGIN_NAME, "copy_drm_or_origin_data pos=%ld, tag_pos= %ld, passed=%ld", this->pos, this->mm.tag_pos, this->mm.passed);
+//		TSDebug(PLUGIN_NAME, "copy_drm_or_origin_data pos=%ld, tag_pos= %ld, passed=%ld", this->pos, this->mm.tag_pos, this->mm.passed);
 
 		TSIOBufferCopy(this->output.buffer, this->mm.drm_reader,drm_avail, 0);
 		TSIOBufferReaderConsume(this->mm.drm_reader, drm_avail);
@@ -106,7 +106,6 @@ int Mp4TransformContext::ignore_useless_part() {
 	return 0;
 }
 
-// copy the video & audio data
 int Mp4TransformContext::copy_video_and_audio_data(bool *write_down,int64_t *toread) {
 	if(this->end_tail) {//有end的流程
 		if(this->pos >= this->end_tail) {
@@ -157,18 +156,9 @@ int Mp4TransformContext::copy_valuable_data(bool *write_down) {
 	}
 	if (avail > 0) {
 		des_ret = 0;
-		if (!this->mm.is_des_body) {//是否已经进行过des加密了
+		if (!this->mm.is_des_body) {
 			TSIOBufferCopy(this->mm.des_buffer, this->res_reader, avail, 0);
 			des_ret = this->mm.process_encrypt_mp4_body();
-			if (des_ret > 0) {
-				des_avail = TSIOBufferReaderAvail(this->mm.out_handle.reader);
-				if (des_avail > 0) {
-					TSIOBufferCopy(this->output.buffer,this->mm.out_handle.reader, des_avail, 0);
-					TSIOBufferReaderConsume(this->mm.out_handle.reader,des_avail);
-					*write_down = true;
-					avail = des_avail;
-				}
-			}
 		} else {
 			TSIOBufferCopy(this->output.buffer, this->res_reader, avail, 0);
 			*write_down = true;
@@ -176,7 +166,16 @@ int Mp4TransformContext::copy_valuable_data(bool *write_down) {
 		TSIOBufferReaderConsume(this->res_reader, avail);
 		this->pos += avail;
 		this->total += avail;
-		TSDebug(PLUGIN_NAME, "copy_video_and_audio_data  totail=%ld",this->total);
+		if (des_ret > 0) {
+			des_avail = TSIOBufferReaderAvail(this->mm.out_handle.reader);
+			if (des_avail > 0) {
+				TSIOBufferCopy(this->output.buffer,this->mm.out_handle.reader, des_avail, 0);
+				TSIOBufferReaderConsume(this->mm.out_handle.reader,des_avail);
+				*write_down = true;
+				if(des_avail- avail > 0)
+					this->total += des_avail- avail;
+			}
+		}
 
 	}
 	return 0;

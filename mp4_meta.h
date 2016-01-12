@@ -707,7 +707,6 @@ public:
   int change_drm_header(off_t start_offset, off_t adjustment);
 
   void get_des_videoid(u_char *des_videoid, uint32_t *d_v_length);
-//  void get_des_null(u_char *des_null, uint32_t *d_n_length);
 
 public:
   int64_t start;

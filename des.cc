@@ -12,7 +12,6 @@
 
 static u_char des_block_size = 8;
 
-//传入进来的字符串最好自带结束符号，这样加密出去后，可以自行用strlen()来获取长度
 // 注意因为每块大小是8，所以字符串长度小于8，出来都是8字节大小
 TSReturnCode
 des_encrypt(const u_char *key, u_char *data, unsigned len)
