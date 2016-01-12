@@ -79,7 +79,13 @@ public:
   int copy_drm_or_origin_data(bool *write_down,int64_t *toread);
 private:
   int ignore_useless_part();
+  //拷贝drm 数据
+  int copy_drm_data(bool *write_down);
   int copy_video_and_audio_data(bool *write_down,int64_t *toread);
+  //丢弃end 之后的数据
+  int discard_after_end_data();
+  //拷贝有价值的数据
+  int copy_valuable_data(bool *write_down);
 
 public:
   IOHandle output;

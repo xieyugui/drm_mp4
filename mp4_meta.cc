@@ -390,7 +390,6 @@ static int64_t IOBufferReaderCopy(TSIOBufferReader readerp, void *buf,
 int Mp4Meta::process_encrypt_mp4_body() {
 
 	int64_t des_avail, new_mp4_length;
-	uint64_t section_arr[section_count], section_size;
 	uint64_t i, need_length;
 	u_char *buf;
 	new_mp4_length = this->range_end - this->range_start + 1;
@@ -599,7 +598,7 @@ int Mp4Meta::change_drm_header(off_t start_offset, off_t adjustment) {
 	u_char section_buf[sizeof(uint64_t) * new_section_count];
 	for (i = 0; i < new_section_count - 1; i++) {
 		mp4_set_64value(section_buf + i * sizeof(uint64_t), MP4_DES_LENGTH);
-		TSDebug(PLUGIN_NAME, "rrrrrrrrrrrrrrrrrrrrrrrrrrr i = %d  MP4_DES_LENGTH=%ld ", i,MP4_DES_LENGTH);
+		TSDebug(PLUGIN_NAME, "rrrrrrrrrrrrrrrrrrrrrrrrrrr i = %d  MP4_DES_LENGTH=%d ", i,MP4_DES_LENGTH);
 	}
 
 	if (new_section_count == MP4_DES_MAX_COUNT) {

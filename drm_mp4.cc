@@ -316,11 +316,10 @@ static int mp4_transform_handler(TSCont contp, Mp4Context *mc) {
 	TSVConn output_conn;
 	TSVIO input_vio;
 	TSIOBufferReader input_reader;
-	int64_t avail, toread, need, upstream_done, des_avail,meta_avail,drm_avail;
-	int ret, des_ret;
+	int64_t avail, toread, upstream_done;
+	int ret;
 	bool write_down;
 	Mp4TransformContext *mtc;
-	Mp4Meta *mm;
 
 	mtc = mc->mtc;
 
