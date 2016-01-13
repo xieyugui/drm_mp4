@@ -16,7 +16,7 @@ int Mp4TransformContext::mp4_parse_meta(bool body_complete) {
 	avail = TSIOBufferReaderAvail(this->dup_reader);
 	blk = TSIOBufferReaderStart(this->dup_reader);
 
-	while (blk != NULL) { //将数据全部拷贝到meta_buffer中去
+	while (blk != NULL) {
 		data = TSIOBufferBlockReadStart(blk, this->dup_reader, &bytes);
 		if (bytes > 0) {
 			TSIOBufferWrite(this->mm.meta_buffer, data, bytes);
@@ -26,16 +26,15 @@ int Mp4TransformContext::mp4_parse_meta(bool body_complete) {
 	}
 
 	TSIOBufferReaderConsume(this->dup_reader, avail);
-	ret = this->mm.parse_meta(body_complete); //body_complete 是否传输完成
+	ret = this->mm.parse_meta(body_complete);
 	TSDebug(PLUGIN_NAME, "mp4_parse_meta ret = %d", ret);
 	if (ret > 0) { // meta success
 		this->tail = this->mm.start_pos; //start position of the new mp4 file
 		this->end_tail = this->mm.end_pos;
 		this->content_length = this->mm.content_length; //-183; //the size of the new mp4 file
-//		TSDebug(PLUGIN_NAME, "mp4_parse_meta  des_reader  tail= %ld end_tail=%ld content_length=%ld", this->tail,this->end_tail,this->content_length);
 	}
 
-	if (ret != 0) { //如果最后有结果了，不管成功还是失败 都销毁dup_reader
+	if (ret != 0) {
 		TSIOBufferReaderFree(this->dup_reader);
 		this->dup_reader = NULL;
 	}
@@ -71,12 +70,12 @@ int Mp4TransformContext::copy_drm_data(bool *write_down) {
 	drm_avail = TSIOBufferReaderAvail(this->mm.drm_reader);
 	if (drm_avail >0 ) {
 		TSIOBufferReaderConsume(this->res_reader, TSIOBufferReaderAvail(this->res_reader));
-		//将meta_buffer 剩余的数据拷贝进去
+
 		meta_avail = TSIOBufferReaderAvail(this->mm.meta_reader);
 		TSDebug(PLUGIN_NAME, "copy_drm_or_origin_data meta_avail=%ld", meta_avail);//324264
 		TSIOBufferCopy(this->res_buffer, this->mm.meta_reader, meta_avail, 0);
 		TSIOBufferReaderConsume(this->mm.meta_reader, meta_avail);
-		//整个文件的长度将从meta_buffer 消费结束地方开始
+
 		this->pos = this->mm.tag_pos + this->mm.passed;
 //		TSDebug(PLUGIN_NAME, "copy_drm_or_origin_data pos=%ld, tag_pos= %ld, passed=%ld", this->pos, this->mm.tag_pos, this->mm.passed);
 
@@ -107,7 +106,7 @@ int Mp4TransformContext::ignore_useless_part() {
 }
 
 int Mp4TransformContext::copy_video_and_audio_data(bool *write_down,int64_t *toread) {
-	if(this->end_tail) {//有end的流程
+	if(this->end_tail) {//if range have end
 		if(this->pos >= this->end_tail) {
 			this->discard_after_end_data();
 			*toread = 0;
@@ -118,7 +117,7 @@ int Mp4TransformContext::copy_video_and_audio_data(bool *write_down,int64_t *tor
 			this->copy_valuable_data(write_down);
 		}
 
-	} else {//没有end的流程
+	} else {
 		if (this->pos >= this->tail) {
 			this->copy_valuable_data(write_down);
 		}
@@ -130,14 +129,13 @@ int Mp4TransformContext::discard_after_end_data() {
 	int64_t avail;
 	u_char des_videoid[1024];
 	uint32_t d_v_length;
-	//提前结束
 	avail = TSIOBufferReaderAvail(this->res_reader);
 	if (avail > 0) {
 		TSIOBufferReaderConsume(this->res_reader, avail);
 	}
 	d_v_length = 0;
 	this->mm.get_des_videoid(des_videoid, &d_v_length);
-	//将videoid 加到结尾
+	//last add des(videoid)
 	TSIOBufferWrite(this->output.buffer, des_videoid, d_v_length);
 	this->total +=d_v_length;
 	TSDebug(PLUGIN_NAME, "copy_video_and_audio_data d_v_length=%d totail=%ld", d_v_length,this->total);

@@ -27,9 +27,9 @@ public:
   }
 
 public:
-  int64_t start; //起始点
+  int64_t start;
   int64_t end;
-  int64_t cl; //文件总长度
+  int64_t cl;
   Mp4TransformContext *mtc;
 
   bool transform_added;

@@ -53,9 +53,9 @@ public:
     res_reader = TSIOBufferReaderAlloc(res_buffer);
     dup_reader = TSIOBufferReaderAlloc(res_buffer);
 
-    mm.start = offset; //起始长度
+    mm.start = offset;
     mm.end = end;
-    mm.cl = cl; //文件总长度
+    mm.cl = cl;
     mm.tdes_key = des_key;
     mm.is_need_md = is_n_md;
   }
@@ -79,12 +79,11 @@ public:
   int copy_drm_or_origin_data(bool *write_down,int64_t *toread);
 private:
   int ignore_useless_part();
-  //拷贝drm 数据
+  //copy drm data
   int copy_drm_data(bool *write_down);
   int copy_video_and_audio_data(bool *write_down,int64_t *toread);
-  //丢弃end 之后的数据
+  //Discard data after the end
   int discard_after_end_data();
-  //拷贝有价值的数据
   int copy_valuable_data(bool *write_down);
 
 public:
@@ -101,7 +100,7 @@ public:
   TSIOBufferReader res_reader;
   TSIOBufferReader dup_reader;
 
-  bool parse_over; //是否解析过
+  bool parse_over;
   bool raw_transform;
 };
 

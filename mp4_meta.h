@@ -35,7 +35,7 @@
 #define PLUGIN_NAME "drm_mp4"
 
 #define MP4_MAX_TRAK_NUM 6
-#define MP4_MAX_BUFFER_SIZE (15 * 1024 * 1024) //15M  稍微改大一点
+#define MP4_MAX_BUFFER_SIZE (15 * 1024 * 1024) //15M
 #define MP4_MIN_BUFFER_SIZE 1024 //1K
 
 #define MP4_NEED_DES_LENGTH 8176
@@ -528,7 +528,7 @@ public:
   uint32_t start_chunk;
   uint64_t start_chunk_size;
   uint32_t start_chunk_samples;
-  uint32_t last_start_chunk_samples;//查找最接近的chunk 的sample个数
+  uint32_t last_start_chunk_samples;
   uint32_t chunk_samples;
   uint64_t chunk_samples_size;
   off_t start_offset;
@@ -638,7 +638,7 @@ public:
   int process_drm_header_range();
   int process_drm_header_sections();
   int process_drm_header_reserved();
-  int process_decrypt_mp4_body();//根据头信息进行解密
+  int process_decrypt_mp4_body();
   int process_encrypt_mp4_body();
 
   int parse_meta(bool body_complete);
@@ -734,8 +734,8 @@ public:
   BufferHandle ftyp_atom;
   BufferHandle moov_atom;
   BufferHandle mvhd_atom;
-  BufferHandle mdat_atom; //流媒体数据结构
-  BufferHandle mdat_data; //流媒体数据
+  BufferHandle mdat_atom;
+  BufferHandle mdat_data;
   BufferHandle out_handle;
 
   Mp4Trak *trak_vec[MP4_MAX_TRAK_NUM];
@@ -757,19 +757,19 @@ public:
   u_char *tdes_key; //des key
 
   //----DRM header start
-  //char signature[3]; 标志位
-  uint32_t version;  //4
+  //char signature[3];
+  uint32_t version;
 
-  uint32_t videoid_size;  //4 tail_length
-  u_char *videoid; //视频 id 标签
+  uint32_t videoid_size;
+  u_char *videoid;
 
-  uint32_t userid_size; //4
-  u_char *userid;  //用户 id 标签
+  uint32_t userid_size;
+  u_char *userid;
 
   uint32_t range_size;
   uint64_t range_start;//同访问 mp4 时 http response header 的 Content-Range 字段的 start
   uint64_t range_end;//同访问 mp4 时 http response header 的 Content-Range 字段的 end
-  uint64_t original_file_size;//mp4 文件字节数
+  uint64_t original_file_size;
 
   uint32_t section_size;//加密片段标签
   uint32_t section_count; // count > 0 && count <= 5
@@ -778,16 +778,16 @@ public:
   //若请求 mp4 文件的 Range 小于 5*8176
   //sections tag 的 count 字段 = range/8176 + 1;
 
-  uint32_t reserved_size; //4
+  uint32_t reserved_size;
   u_char *reserved;
-  int64_t drm_head_length;  //drm head 的长度
-  int64_t tag_pos; //已经消费了多少字节
+  int64_t drm_head_length;
+  int64_t tag_pos; //How many bytes have been consumed
   bool complete_parse_drm_header;
   int64_t duration_pos;//MP4 从头开始计数，为了方便计算该丢弃多少数据
   int64_t drm_length;
   bool is_des_body;//是否已经加密过
   bool is_need_md;
-  uint32_t small_des_add_length; //当des加密小于key 的长度的时候，加密出来就是key 的长度
+  uint32_t small_des_add_length; //当des加密小于key block 的长度的时候，加密出来就是key 的长度
 };
 
 #endif

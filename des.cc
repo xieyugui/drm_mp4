@@ -12,7 +12,7 @@
 
 static u_char des_block_size = 8;
 
-// 注意因为每块大小是8，所以字符串长度小于8，出来都是8字节大小
+// note: Because each block size is 8, so not less than 8 bytes
 TSReturnCode
 des_encrypt(const u_char *key, u_char *data, unsigned len)
 {

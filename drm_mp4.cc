@@ -26,7 +26,7 @@
 
 //des key
 static u_char *des_key = NULL;
-//是否
+//need add mp4 head
 static bool is_need_add_mp4_header = false;
 
 static int mp4_handler(TSCont contp, TSEvent event, void *edata);
@@ -50,7 +50,7 @@ TSReturnCode TSRemapInit(TSRemapInterface *api_info, char *errbuf,int errbuf_siz
 	return TS_SUCCESS;
 }
 
-//该插件需要传入des key ，第二个参数是选填，如果是根据字节拖动，是否需要针对mp4头进行处理
+// first parameter is des key , the second parameter is optional (need add mp4 head)
 TSReturnCode TSRemapNewInstance(int argc, char *argv[], void **ih, char *errbuf, int errbuf_size) {
 	if (argc < 2) {
 		TSError("[%s] Plugin not initialized, must have des key", PLUGIN_NAME);
@@ -106,7 +106,7 @@ TSRemapStatus TSRemapDoRemap(void * /* ih ATS_UNUSED */, TSHttpTxn rh, TSRemapRe
 		return TSREMAP_NO_REMAP;
 	}
 
-	//如果头里带这No-Des 这当作一般的http 请求
+	// if request header have No-Des, As a normal http range request
 	no_des_field = TSMimeHdrFieldFind(rri->requestBufp, rri->requestHdrp,"No-Des", 6);
 	if (no_des_field) {
 		return TSREMAP_NO_REMAP;
@@ -117,7 +117,7 @@ TSRemapStatus TSRemapDoRemap(void * /* ih ATS_UNUSED */, TSHttpTxn rh, TSRemapRe
 		range = TSMimeHdrFieldValueStringGet(rri->requestBufp, rri->requestHdrp,range_field, -1, &range_len);
 		size_t b_len = sizeof("bytes=") - 1;
 		if (range && (strncasecmp(range, "bytes=", b_len) == 0)) {
-			//获取range value
+			//get range value
 			start = (int64_t) strtol(range + b_len, NULL, 10);
 			range_separator = strchr(range, '-');
 			if (range_separator) {
@@ -274,8 +274,8 @@ static void mp4_add_transform(Mp4Context *mc, TSHttpTxn txnp) {
 
 	mc->mtc = new Mp4TransformContext(mc->start, mc->end, mc->cl, des_key, is_need_add_mp4_header);
 
-	TSHttpTxnUntransformedRespCache(txnp, 1);//告诉TS只缓存transform之前的数据，不缓存transform之后的数据
-	TSHttpTxnTransformedRespCache(txnp, 0);//告诉TS只缓存transform之前的数据，不缓存transform之后的数据
+	TSHttpTxnUntransformedRespCache(txnp, 1);//tell TS just cache before transform data, not cache after transform data
+	TSHttpTxnTransformedRespCache(txnp, 0);//tell TS just cache before transform data, not cache after transform data
 
 	connp = TSTransformCreate(mp4_transform_entry, txnp);
 	TSContDataSet(connp, mc);
@@ -335,14 +335,14 @@ static int mp4_transform_handler(TSCont contp, Mp4Context *mc) {
 		return 1;
 	}
 
-	avail = TSIOBufferReaderAvail(input_reader);//总共有多少
-	upstream_done = TSVIONDoneGet(input_vio);//已经完成多少
+	avail = TSIOBufferReaderAvail(input_reader);
+	upstream_done = TSVIONDoneGet(input_vio);
 
 	TSIOBufferCopy(mtc->res_buffer, input_reader, avail, 0);
 	TSIOBufferReaderConsume(input_reader, avail);
 	TSVIONDoneSet(input_vio, upstream_done + avail);
 
-	toread = TSVIONTodoGet(input_vio);//还有多少需要读取
+	toread = TSVIONTodoGet(input_vio);
 	write_down = false;
 	if(!mtc->parse_over) {
 		ret = mtc->mp4_parse_meta(toread <= 0);
@@ -354,7 +354,7 @@ static int mp4_transform_handler(TSCont contp, Mp4Context *mc) {
 		mtc->output.buffer = TSIOBufferCreate();
 		mtc->output.reader = TSIOBufferReaderAlloc(mtc->output.buffer);
 
-		if (ret < 0) { //解析成功，还是失败
+		if (ret < 0) {
 			mtc->output.vio = TSVConnWrite(output_conn, contp,mtc->output.reader, mc->cl);
 			mtc->raw_transform = true;
 
@@ -366,7 +366,6 @@ static int mp4_transform_handler(TSCont contp, Mp4Context *mc) {
 	mtc->copy_drm_or_origin_data(&write_down,&toread);
 
 trans:
-	TSDebug(PLUGIN_NAME, "trans totail=%ld",mtc->total);
 	if (write_down)
 		TSVIOReenable(mtc->output.vio);
 
